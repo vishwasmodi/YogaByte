@@ -3,6 +3,16 @@ const router = express.Router();
 const auth = require("../middleware/auth");
 const { User } = require("../models/user");
 
+function compare(a, b) {
+  if (a.days > b.days) {
+    return -1;
+  }
+  if (a.days < b.days) {
+    return 1;
+  }
+  return 0;
+}
+
 router.get("/", async (req, res) => {
   const users = await User.find();
   var leaderboard = [];
@@ -13,6 +23,7 @@ router.get("/", async (req, res) => {
       days: users[i].days.length,
     });
   }
+  leaderboard.sort(compare);
   res.send(leaderboard);
 });
 

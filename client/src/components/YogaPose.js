@@ -26,6 +26,7 @@ class PoseNet extends Component {
 
   constructor(props) {
     super(props, PoseNet.defaultProps);
+    this.state = { pose: "Unknown Pose" };
   }
 
   getCanvas = (elem) => {
@@ -169,7 +170,9 @@ class PoseNet extends Component {
               skeletonColor,
               canvasContext
             );
-            classifyPose(keypoints);
+            let pose = classifyPose(keypoints);
+
+            this.setState({ pose });
           }
           if (showSkeleton) {
             drawSkeleton(
@@ -191,9 +194,12 @@ class PoseNet extends Component {
   render() {
     return (
       <div>
-        <div class="flex justify-center">
+        <div class="flex justify-center ">
           <video id="videoNoShow" playsInline ref={this.getVideo} hidden />
           <canvas className="webcam" ref={this.getCanvas} />
+          <h1 class="text-green-800 text-4xl fixed flex-col h-screen">
+            {this.state.pose}
+          </h1>
         </div>
       </div>
     );
