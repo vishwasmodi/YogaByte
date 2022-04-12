@@ -1,92 +1,203 @@
-import React, { useRef } from "react";
+import { drawKeyPoints, drawSkeleton, classifyPose } from "../utilities";
+import React, { Component } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import * as tf from "@tensorflow/tfjs";
 import * as posenet from "@tensorflow-models/posenet";
-import Webcam from "react-webcam";
-import { drawKeypoints, drawSkeleton, classifyPose } from "../utilities";
 
-const YogaPose = () => {
-  const webcamRef = useRef(null);
-  const canvasRef = useRef(null);
-
-  //  Load posenet
-  const runPosenet = async () => {
-    const net = await posenet.load({
-      inputResolution: { width: 640, height: 480 },
-      scale: 0.8,
-    });
-    setInterval(() => {
-      detect(net);
-    }, 200);
+class PoseNet extends Component {
+  static defaultProps = {
+    videoWidth: 900,
+    videoHeight: 700,
+    flipHorizontal: true,
+    algorithm: "single-pose",
+    showVideo: true,
+    showSkeleton: true,
+    showPoints: true,
+    minPoseConfidence: 0.1,
+    minPartConfidence: 0.5,
+    maxPoseDetections: 2,
+    nmsRadius: 20,
+    outputStride: 16,
+    imageScaleFactor: 0.5,
+    skeletonColor: "#ffadea",
+    skeletonLineWidth: 6,
+    loadingText: "Loading...please be patient...",
   };
 
-  const detect = async (net) => {
-    if (
-      typeof webcamRef.current !== "undefined" &&
-      webcamRef.current !== null &&
-      webcamRef.current.video.readyState === 4
-    ) {
-      // Get Video Properties
-      const video = webcamRef.current.video;
-      const videoWidth = webcamRef.current.video.videoWidth;
-      const videoHeight = webcamRef.current.video.videoHeight;
+  constructor(props) {
+    super(props, PoseNet.defaultProps);
+  }
 
-      // Set video width
-      webcamRef.current.video.width = videoWidth;
-      webcamRef.current.video.height = videoHeight;
+  getCanvas = (elem) => {
+    this.canvas = elem;
+  };
 
-      // Make Detections
-      const pose = await net.estimateSinglePose(video);
-      console.log(pose);
+  getVideo = (elem) => {
+    this.video = elem;
+  };
 
-      drawCanvas(pose, video, videoWidth, videoHeight, canvasRef);
+  async componentDidMount() {
+    try {
+      await this.setupCamera();
+    } catch (error) {
+      throw new Error(
+        "This browser does not support video capture, or this device does not have a camera"
+      );
     }
-  };
 
-  const drawCanvas = (pose, video, videoWidth, videoHeight, canvas) => {
-    const ctx = canvas.current.getContext("2d");
-    canvas.current.width = videoWidth;
-    canvas.current.height = videoHeight;
+    try {
+      this.posenet = await posenet.load();
+    } catch (error) {
+      console.log(error);
+      throw new Error("PoseNet failed to load");
+    } finally {
+      setTimeout(() => {
+        this.setState({ loading: false });
+      }, 200);
+    }
 
-    drawKeypoints(pose["keypoints"], 0.5, ctx);
-    drawSkeleton(pose["keypoints"], 0.5, ctx);
-    classifyPose(pose.keypoints);
-  };
+    this.detectPose();
+  }
 
-  runPosenet();
+  async setupCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error(
+        "Browser API navigator.mediaDevices.getUserMedia not available"
+      );
+    }
+    const { videoWidth, videoHeight } = this.props;
+    const video = this.video;
+    video.width = videoWidth;
+    video.height = videoHeight;
 
-  return (
-    <div>
-      <Webcam
-        ref={webcamRef}
-        style={{
-          position: "absolute",
-          marginLeft: "auto",
-          marginRight: "auto",
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          zindex: 9,
-          width: 640,
-          height: 480,
-        }}
-      />
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: "user",
+        width: videoWidth,
+        height: videoHeight,
+      },
+    });
 
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: "absolute",
-          marginLeft: "auto",
-          marginRight: "auto",
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          zindex: 9,
-          width: 640,
-          height: 480,
-        }}
-      />
-    </div>
-  );
-};
+    video.srcObject = stream;
 
-export default YogaPose;
+    return new Promise((resolve) => {
+      video.onloadedmetadata = () => {
+        video.play();
+        resolve(video);
+      };
+    });
+  }
+
+  detectPose() {
+    const { videoWidth, videoHeight } = this.props;
+    const canvas = this.canvas;
+    const canvasContext = canvas.getContext("2d");
+
+    canvas.width = videoWidth;
+    canvas.height = videoHeight;
+
+    this.poseDetectionFrame(canvasContext);
+  }
+
+  poseDetectionFrame(canvasContext) {
+    const {
+      algorithm,
+      imageScaleFactor,
+      flipHorizontal,
+      outputStride,
+      minPoseConfidence,
+      minPartConfidence,
+      maxPoseDetections,
+      nmsRadius,
+      videoWidth,
+      videoHeight,
+      showVideo,
+      showPoints,
+      showSkeleton,
+      skeletonColor,
+      skeletonLineWidth,
+    } = this.props;
+
+    const posenetModel = this.posenet;
+    const video = this.video;
+
+    const findPoseDetectionFrame = async () => {
+      let poses = [];
+
+      switch (algorithm) {
+        case "multi-pose": {
+          poses = await posenetModel.estimateMultiplePoses(
+            video,
+            imageScaleFactor,
+            flipHorizontal,
+            outputStride,
+            maxPoseDetections,
+            minPartConfidence,
+            nmsRadius
+          );
+          break;
+        }
+        case "single-pose": {
+          const pose = await posenetModel.estimateSinglePose(
+            video,
+            imageScaleFactor,
+            flipHorizontal,
+            outputStride
+          );
+          poses.push(pose);
+          break;
+        }
+      }
+
+      canvasContext.clearRect(0, 0, videoWidth, videoHeight);
+
+      if (showVideo) {
+        canvasContext.save();
+        canvasContext.scale(-1, 1);
+        canvasContext.translate(-videoWidth, 0);
+        canvasContext.drawImage(video, 0, 0, videoWidth, videoHeight);
+        canvasContext.restore();
+      }
+
+      poses.forEach(({ score, keypoints }) => {
+        if (score >= minPoseConfidence) {
+          if (showPoints) {
+            drawKeyPoints(
+              keypoints,
+              minPartConfidence,
+              skeletonColor,
+              canvasContext
+            );
+            classifyPose(keypoints);
+          }
+          if (showSkeleton) {
+            drawSkeleton(
+              keypoints,
+              minPartConfidence,
+              skeletonColor,
+              skeletonLineWidth,
+              canvasContext
+            );
+          }
+        }
+      });
+
+      requestAnimationFrame(findPoseDetectionFrame);
+    };
+    findPoseDetectionFrame();
+  }
+
+  render() {
+    return (
+      <div>
+        <div class="flex justify-center">
+          <video id="videoNoShow" playsInline ref={this.getVideo} hidden />
+          <canvas className="webcam" ref={this.getCanvas} />
+        </div>
+      </div>
+    );
+  }
+}
+
+export default PoseNet;

@@ -18,9 +18,14 @@ const Nav = () => {
           <img src={logo} class="h-14" alt="" />
         </Link>
       </div> */}
+      <Link to="/">
+        <button class="h-10 bg-blue-500 hover:bg-blue-600 text-white font-bold px-4 rounded focus:outline-none focus:shadow-outline ml-6">
+          Home
+        </button>
+      </Link>
 
       <Link to="/leaderboard">
-        <button class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-4 rounded focus:outline-none focus:shadow-outline ml-6">
+        <button class="h-10 bg-blue-500 hover:bg-blue-600 text-white font-bold px-4 rounded focus:outline-none focus:shadow-outline ml-6">
           Leaderboard
         </button>
       </Link>

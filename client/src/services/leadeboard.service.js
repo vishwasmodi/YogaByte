@@ -7,7 +7,15 @@ const getLeaderboard = () => {
 };
 
 const doneYoga = () => {
-  return axios.post(API_URL, {});
+  return axios.post(
+    API_URL,
+    {},
+    {
+      headers: {
+        "x-auth-token": JSON.parse(localStorage.getItem("user")).token,
+      },
+    }
+  );
 };
 
 export default {
