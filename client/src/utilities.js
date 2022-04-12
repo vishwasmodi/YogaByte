@@ -164,12 +164,12 @@ export function classifyPose(keypoints) {
     keypoints[16].position
   );
 
-  console.log(left_elbow_angle);
-  console.log(right_elbow_angle);
-  console.log(left_shoulder_angle);
-  console.log(right_shoulder_angle);
-  console.log(left_knee_angle);
-  console.log(right_knee_angle);
+  //   console.log(left_elbow_angle);
+  //   console.log(right_elbow_angle);
+  //   console.log(left_shoulder_angle);
+  //   console.log(right_shoulder_angle);
+  //   console.log(left_knee_angle);
+  //   console.log(right_knee_angle);
 
   if (
     left_elbow_angle > 165 &&
