@@ -9,8 +9,8 @@ import {
 import Login from "./components/Login";
 import Register from "./components/Register";
 import Nav from "./components/Nav";
-import PoseNet from "./components/YogaPose";
 import Leaderboard from "./components/Leaderboard";
+import YogaPose from "./components/YogaPose";
 
 const Routes = () => {
   return (
@@ -19,7 +19,7 @@ const Routes = () => {
 
       <Switch>
         {/* <Route exact path='/route' component={Page} /> for all the pages */}
-        <Route exact path="" element={<PoseNet />} />
+        <Route exact path="" element={<YogaPose />} />
         <Route exact path="/login" element={<Login />} />
         <Route exact path="/register" element={<Register />} />
         <Route exact path="/leaderboard" element={<Leaderboard />} />

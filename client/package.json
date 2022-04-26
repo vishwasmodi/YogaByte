@@ -3,7 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@headlessui/react": "^1.5.0",
+    "@heroicons/react": "^1.0.6",
+    "@material-tailwind/react": "^0.3.4",
+    "@mediapipe/pose": "^0.5.1635988162",
+    "@popperjs/core": "^2.11.5",
     "@tensorflow-models/coco-ssd": "^2.2.2",
+    "@tensorflow-models/pose-detection": "^2.0.0",
     "@tensorflow-models/posenet": "^2.2.2",
     "@tensorflow/tfjs": "^3.15.0",
     "@testing-library/jest-dom": "^5.16.4",

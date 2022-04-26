@@ -22,11 +22,11 @@ const getLeaderboard = () => (dispatch) => {
   );
 };
 
-const doneYoga = () => (dispatch) => {
-  return LeaderboardServices.doneYoga().then(
+const doneYoga = (totalTime) => (dispatch) => {
+  return LeaderboardServices.doneYoga(totalTime).then(
     (res) => {
       const message = "Success!";
-      dispatchEvent({
+      dispatch({
         type: actions.DONE_YOGA_SUCCESS,
         payload: res.data,
       });

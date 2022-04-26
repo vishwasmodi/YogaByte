@@ -29,6 +29,10 @@ const userSchema = new mongoose.Schema({
       required: true,
     },
   ],
+  todaysTime: {
+    type: Number,
+    default: 0,
+  },
 });
 
 const { JWT_PK } = process.env;
@@ -45,6 +49,7 @@ function validateUser(user) {
     username: Joi.string().max(255).required(),
     password: Joi.string().max(255).required(),
     Date: Joi.array(),
+    todaysTime: Joi.number(),
   });
   return schema.validate(user);
 }

@@ -18,6 +18,7 @@ const Leaderboard = () => {
               <th class="text-left p-4 font-medium">Name</th>
               <th class="text-left p-4 font-medium">Email</th>
               <th class="text-left p-4 font-medium">Yoga Days Streak</th>
+              <th class="text-left p-4 font-medium">Today's Score</th>
             </tr>
           </thead>
           <tbody>
@@ -27,6 +28,7 @@ const Leaderboard = () => {
                   <td class="p-4">{user.name}</td>
                   <td class="p-4">{user.email}</td>
                   <td class="p-4">{user.days}</td>
+                  <td class="p-4">{user.todaysTime}</td>
                 </tr>
               );
             })}

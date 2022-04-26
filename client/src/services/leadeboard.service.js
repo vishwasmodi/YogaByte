@@ -6,16 +6,11 @@ const getLeaderboard = () => {
   return axios.get(API_URL);
 };
 
-const doneYoga = () => {
-  return axios.post(
-    API_URL,
-    {},
-    {
-      headers: {
-        "x-auth-token": JSON.parse(localStorage.getItem("user")).token,
-      },
-    }
-  );
+const doneYoga = (totalTime) => {
+  console.log(totalTime);
+  return axios.post(API_URL, {
+    totalTime: totalTime,
+  });
 };
 
 export default {

@@ -6,7 +6,7 @@ const initialLeaderboard = {
 };
 
 const initialDoneYoga = {
-  doneYoga: {},
+  totalTime: 0,
 };
 
 export function getLeaderboard(state = initialLeaderboard, action) {
@@ -31,6 +31,7 @@ export function doneYoga(state = initialDoneYoga, action) {
     case actions.DONE_YOGA_SUCCESS:
       return {
         ...state,
+        totalTime: payload,
         loading: false,
       };
     case actions.DONE_YOGA_FAIL:

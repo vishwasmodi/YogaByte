@@ -12,7 +12,7 @@ const Nav = () => {
   };
 
   return (
-    <div class="h-20 bg-gray-700 flex items-center justify-between ">
+    <div class="h-20 bg-blue-500 flex items-center justify-between opacity-75 ">
       {/* <div class=" ml-8">
         <Link to="/">
           <img src={logo} class="h-14" alt="" />

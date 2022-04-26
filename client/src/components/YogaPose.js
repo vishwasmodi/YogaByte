@@ -1,209 +1,292 @@
-import { drawKeyPoints, drawSkeleton, classifyPose } from "../utilities";
-import React, { Component } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import * as poseDetection from "@tensorflow-models/pose-detection";
 import * as tf from "@tensorflow/tfjs";
-import * as posenet from "@tensorflow-models/posenet";
+import React, { useRef, useState, useEffect } from "react";
+import backend from "@tensorflow/tfjs-backend-webgl";
+import Webcam from "react-webcam";
+import { count } from "../utils/music";
+import { useDispatch, useSelector } from "react-redux";
+import leaderboardActions from "../actions/leaderboardActions";
 
-class PoseNet extends Component {
-  static defaultProps = {
-    videoWidth: 900,
-    videoHeight: 700,
-    flipHorizontal: true,
-    algorithm: "single-pose",
-    showVideo: true,
-    showSkeleton: true,
-    showPoints: true,
-    minPoseConfidence: 0.1,
-    minPartConfidence: 0.5,
-    maxPoseDetections: 2,
-    nmsRadius: 20,
-    outputStride: 16,
-    imageScaleFactor: 0.5,
-    skeletonColor: "#ffadea",
-    skeletonLineWidth: 6,
-    loadingText: "Loading...please be patient...",
-  };
+// import Instructions from "../../components/Instrctions/Instructions";
 
-  constructor(props) {
-    super(props, PoseNet.defaultProps);
-    this.state = { pose: "Unknown Pose" };
-  }
+import Dropdown from "./Dropdown";
+import { poseImages } from "../utils/pose_images";
+import { POINTS, keypointConnections } from "../utils/data";
+import { drawPoint, drawSegment } from "../utils/helper";
+// const isLoggedIn = useSelector((state) => state.isLoggedIn);
 
-  getCanvas = (elem) => {
-    this.canvas = elem;
-  };
+let skeletonColor = "rgb(255,255,255)";
+let poseList = [
+  "Tree",
+  "Chair",
+  "Cobra",
+  "Warrior",
+  "Dog",
+  "Shoulderstand",
+  "Traingle",
+];
 
-  getVideo = (elem) => {
-    this.video = elem;
-  };
+let interval;
 
-  async componentDidMount() {
-    try {
-      await this.setupCamera();
-    } catch (error) {
-      throw new Error(
-        "This browser does not support video capture, or this device does not have a camera"
-      );
+// flag variable is used to help capture the time when AI just detect
+// the pose as correct(probability more than threshold)
+let flag = false;
+
+const YogaPose = () => {
+  const webcamRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const [startingTime, setStartingTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [poseTime, setPoseTime] = useState(0);
+  const [bestPerform, setBestPerform] = useState(0);
+  const [totalTime, setTotalTime] = useState(0);
+  const [currentPose, setCurrentPose] = useState("Tree");
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    console.log("Here okey");
+    dispatch(leaderboardActions.doneYoga(totalTime));
+  }, [totalTime]);
+
+  useEffect(() => {
+    const timeDiff = (currentTime - startingTime) / 1000;
+    if (flag) {
+      setPoseTime(timeDiff);
     }
 
-    try {
-      this.posenet = await posenet.load();
-    } catch (error) {
-      console.log(error);
-      throw new Error("PoseNet failed to load");
-    } finally {
-      setTimeout(() => {
-        this.setState({ loading: false });
-      }, 200);
+    if ((currentTime - startingTime) / 1000 > bestPerform) {
+      setBestPerform(timeDiff);
     }
+  }, [currentTime]);
 
-    this.detectPose();
+  useEffect(() => {
+    setCurrentTime(0);
+    setPoseTime(0);
+    setBestPerform(0);
+  }, [currentPose]);
+
+  const CLASS_NO = {
+    Chair: 0,
+    Cobra: 1,
+    Dog: 2,
+    No_Pose: 3,
+    Shoulderstand: 4,
+    Traingle: 5,
+    Tree: 6,
+    Warrior: 7,
+  };
+
+  function get_center_point(landmarks, left_bodypart, right_bodypart) {
+    let left = tf.gather(landmarks, left_bodypart, 1);
+    let right = tf.gather(landmarks, right_bodypart, 1);
+    const center = tf.add(tf.mul(left, 0.5), tf.mul(right, 0.5));
+    return center;
   }
 
-  async setupCamera() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error(
-        "Browser API navigator.mediaDevices.getUserMedia not available"
-      );
-    }
-    const { videoWidth, videoHeight } = this.props;
-    const video = this.video;
-    video.width = videoWidth;
-    video.height = videoHeight;
+  function get_pose_size(landmarks, torso_size_multiplier = 2.5) {
+    let hips_center = get_center_point(
+      landmarks,
+      POINTS.LEFT_HIP,
+      POINTS.RIGHT_HIP
+    );
+    let shoulders_center = get_center_point(
+      landmarks,
+      POINTS.LEFT_SHOULDER,
+      POINTS.RIGHT_SHOULDER
+    );
+    let torso_size = tf.norm(tf.sub(shoulders_center, hips_center));
+    let pose_center_new = get_center_point(
+      landmarks,
+      POINTS.LEFT_HIP,
+      POINTS.RIGHT_HIP
+    );
+    pose_center_new = tf.expandDims(pose_center_new, 1);
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: "user",
-        width: videoWidth,
-        height: videoHeight,
-      },
-    });
+    pose_center_new = tf.broadcastTo(pose_center_new, [1, 17, 2]);
+    // return: shape(17,2)
+    let d = tf.gather(tf.sub(landmarks, pose_center_new), 0, 0);
+    let max_dist = tf.max(tf.norm(d, "euclidean", 0));
 
-    video.srcObject = stream;
-
-    return new Promise((resolve) => {
-      video.onloadedmetadata = () => {
-        video.play();
-        resolve(video);
-      };
-    });
+    // normalize scale
+    let pose_size = tf.maximum(
+      tf.mul(torso_size, torso_size_multiplier),
+      max_dist
+    );
+    return pose_size;
   }
 
-  detectPose() {
-    const { videoWidth, videoHeight } = this.props;
-    const canvas = this.canvas;
-    const canvasContext = canvas.getContext("2d");
+  function normalize_pose_landmarks(landmarks) {
+    let pose_center = get_center_point(
+      landmarks,
+      POINTS.LEFT_HIP,
+      POINTS.RIGHT_HIP
+    );
+    pose_center = tf.expandDims(pose_center, 1);
+    pose_center = tf.broadcastTo(pose_center, [1, 17, 2]);
+    landmarks = tf.sub(landmarks, pose_center);
 
-    canvas.width = videoWidth;
-    canvas.height = videoHeight;
-
-    this.poseDetectionFrame(canvasContext);
+    let pose_size = get_pose_size(landmarks);
+    landmarks = tf.div(landmarks, pose_size);
+    return landmarks;
   }
 
-  poseDetectionFrame(canvasContext) {
-    const {
-      algorithm,
-      imageScaleFactor,
-      flipHorizontal,
-      outputStride,
-      minPoseConfidence,
-      minPartConfidence,
-      maxPoseDetections,
-      nmsRadius,
-      videoWidth,
-      videoHeight,
-      showVideo,
-      showPoints,
-      showSkeleton,
-      skeletonColor,
-      skeletonLineWidth,
-    } = this.props;
+  function landmarks_to_embedding(landmarks) {
+    // normalize landmarks 2D
+    landmarks = normalize_pose_landmarks(tf.expandDims(landmarks, 0));
+    let embedding = tf.reshape(landmarks, [1, 34]);
+    return embedding;
+  }
 
-    const posenetModel = this.posenet;
-    const video = this.video;
-
-    const findPoseDetectionFrame = async () => {
-      let poses = [];
-
-      switch (algorithm) {
-        case "multi-pose": {
-          poses = await posenetModel.estimateMultiplePoses(
-            video,
-            imageScaleFactor,
-            flipHorizontal,
-            outputStride,
-            maxPoseDetections,
-            minPartConfidence,
-            nmsRadius
-          );
-          break;
-        }
-        case "single-pose": {
-          const pose = await posenetModel.estimateSinglePose(
-            video,
-            imageScaleFactor,
-            flipHorizontal,
-            outputStride
-          );
-          poses.push(pose);
-          break;
-        }
-      }
-
-      canvasContext.clearRect(0, 0, videoWidth, videoHeight);
-
-      if (showVideo) {
-        canvasContext.save();
-        canvasContext.scale(-1, 1);
-        canvasContext.translate(-videoWidth, 0);
-        canvasContext.drawImage(video, 0, 0, videoWidth, videoHeight);
-        canvasContext.restore();
-      }
-
-      poses.forEach(({ score, keypoints }) => {
-        if (score >= minPoseConfidence) {
-          if (showPoints) {
-            drawKeyPoints(
-              keypoints,
-              minPartConfidence,
-              skeletonColor,
-              canvasContext
-            );
-            let pose = classifyPose(keypoints);
-
-            this.setState({ pose });
-          }
-          if (showSkeleton) {
-            drawSkeleton(
-              keypoints,
-              minPartConfidence,
-              skeletonColor,
-              skeletonLineWidth,
-              canvasContext
-            );
-          }
-        }
-      });
-
-      requestAnimationFrame(findPoseDetectionFrame);
+  const runMovenet = async () => {
+    const detectorConfig = {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
     };
-    findPoseDetectionFrame();
+    const detector = await poseDetection.createDetector(
+      poseDetection.SupportedModels.MoveNet,
+      detectorConfig
+    );
+    const poseClassifier = await tf.loadLayersModel(
+      "https://models.s3.jp-tok.cloud-object-storage.appdomain.cloud/model.json"
+    );
+    const countAudio = new Audio(count);
+    countAudio.loop = true;
+    interval = setInterval(() => {
+      detectPose(detector, poseClassifier, countAudio);
+    }, 100);
+  };
+
+  const detectPose = async (detector, poseClassifier, countAudio) => {
+    if (
+      typeof webcamRef.current !== "undefined" &&
+      webcamRef.current !== null &&
+      webcamRef.current.video.readyState === 4
+    ) {
+      let notDetected = 0;
+      const video = webcamRef.current.video;
+      const pose = await detector.estimatePoses(video);
+      const ctx = canvasRef.current.getContext("2d");
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      try {
+        const keypoints = pose[0].keypoints;
+        let input = keypoints.map((keypoint) => {
+          if (keypoint.score > 0.4) {
+            if (
+              !(keypoint.name === "left_eye" || keypoint.name === "right_eye")
+            ) {
+              drawPoint(ctx, keypoint.x, keypoint.y, 8, "rgb(255,255,255)");
+              let connections = keypointConnections[keypoint.name];
+              try {
+                connections.forEach((connection) => {
+                  let conName = connection.toUpperCase();
+                  drawSegment(
+                    ctx,
+                    [keypoint.x, keypoint.y],
+                    [
+                      keypoints[POINTS[conName]].x,
+                      keypoints[POINTS[conName]].y,
+                    ],
+                    skeletonColor
+                  );
+                });
+              } catch (err) {}
+            }
+          } else {
+            notDetected += 1;
+          }
+          return [keypoint.x, keypoint.y];
+        });
+        if (notDetected > 4) {
+          skeletonColor = "rgb(255,255,255)";
+          return;
+        }
+        const processedInput = landmarks_to_embedding(input);
+        const classification = poseClassifier.predict(processedInput);
+
+        classification.array().then((data) => {
+          const classNo = CLASS_NO[currentPose];
+          // console.log(data[0][classNo]);
+          if (data[0][classNo] > 0.97) {
+            if (!flag) {
+              countAudio.play();
+              setStartingTime(new Date(Date()).getTime());
+              flag = true;
+            }
+            setCurrentTime(new Date(Date()).getTime());
+            skeletonColor = "rgb(0,255,0)";
+          } else {
+            flag = false;
+            setTotalTime(poseTime);
+            skeletonColor = "rgb(255,255,255)";
+            countAudio.pause();
+            countAudio.currentTime = 0;
+          }
+        });
+      } catch (err) {
+        console.log(err);
+      }
+    }
+  };
+
+  function stopPose() {
+    clearInterval(interval);
   }
 
-  render() {
-    return (
-      <div>
-        <div class="flex justify-center ">
-          <video id="videoNoShow" playsInline ref={this.getVideo} hidden />
-          <canvas className="webcam" ref={this.getCanvas} />
-          <h1 class="text-green-800 text-4xl fixed flex-col h-screen">
-            {this.state.pose}
-          </h1>
+  runMovenet();
+  return (
+    <div
+      class="h-screen flex flex-col"
+      style={{
+        backgroundImage:
+          "url('https://images.wallpaperscraft.com/image/single/field_sunset_grass_129566_1920x1080.jpg')",
+      }}
+    >
+      <Dropdown
+        poseList={poseList}
+        currentPose={currentPose}
+        setCurrentPose={setCurrentPose}
+      />
+      {/* <Instructions currentPose={currentPose} /> */}
+
+      <div class="flex flex-row justify-around mt-20">
+        <div class="">
+          <Webcam
+            width="640px"
+            height="480px"
+            id="webcam"
+            ref={webcamRef}
+            style={{
+              position: "absolute",
+              left: 120,
+              top: 200,
+              padding: "0px",
+            }}
+          />
+          <canvas
+            ref={canvasRef}
+            id="my-canvas"
+            width="640px"
+            height="480px"
+            style={{
+              position: "absolute",
+              left: 120,
+              top: 200,
+              zIndex: 1,
+            }}
+          ></canvas>
+        </div>
+        <div clas="flex flex-col justify-center ">
+          <img src={poseImages[currentPose]} class="h-96 w-96 mt-10" />
+          <div class="flex px-10 ">
+            <div class="ml-8 mr-2 mt-6 ">
+              <span class="text-lg text-white">Pose Time: {poseTime} s | </span>
+              <span class="text-lg text-white">Best: {bestPerform} s</span>
+            </div>
+          </div>
         </div>
       </div>
-    );
-  }
-}
+    </div>
+  );
+};
 
-export default PoseNet;
+export default YogaPose;
